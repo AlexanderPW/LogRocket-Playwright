@@ -1,0 +1,35 @@
+# Environment & secrets
+.env
+.env.local
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Generated test output (reproducible via generate/record-fixtures)
+generated-tests/
+
+# HAR captures may contain staging/production data
+**/capture.har
+**/uploaded-capture.har
+
+# Playwright / Node (under generated-tests or local runs)
+node_modules/
+playwright-report/
+test-results/
+blob-report/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

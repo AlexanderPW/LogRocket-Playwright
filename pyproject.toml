@@ -1,0 +1,28 @@
+[project]
+name = "e2e-from-logrocket"
+version = "0.1.0"
+description = "Generate e2e regression tests from LogRocket user flows using local Qwen + OpenAI Agents SDK"
+requires-python = ">=3.10"
+dependencies = [
+    "openai-agents>=0.2.0",
+    "openai>=1.0.0",
+    "pydantic>=2.0",
+    "python-dotenv>=1.0",
+    "httpx>=0.27",
+    "faker>=24.0",
+]
+
+[project.optional-dependencies]
+dashboard = ["streamlit>=1.40.0"]
+
+[project.scripts]
+e2e-from-logrocket = "e2e_from_logrocket.cli:main"
+record-fixtures = "e2e_from_logrocket.cli:main"
+e2e-dashboard = "e2e_from_logrocket.dashboard:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/e2e_from_logrocket"]
