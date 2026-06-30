@@ -121,12 +121,12 @@ Requires Node.js. On first run, installs `@playwright/test` under `generated-tes
 ```mermaid
 flowchart LR
   Q[Your query] --> SR[Session Researcher]
-  LR[(LogRocket MCP)] --> SR
+  MCP[(LogRocket MCP)] --> SR
   SR --> PII[Faker PII sanitizer]
   PII --> FN[Flow Normalizer]
   FN --> TW[Test Writer]
   TW --> TR[Test Reviewer]
-  TR --> OUT[spec + fixtures + route helper]
+  TR --> OUT[Spec, fixtures, and routes]
 ```
 
 | Agent | Role |
@@ -135,19 +135,3 @@ flowchart LR
 | Flow Normalizer | Converts narrative → structured JSON steps |
 | Test Writer | Emits Playwright TypeScript |
 | Test Reviewer | Catches brittle selectors / missing assertions |
-
-## Model notes
-
-- Prefer **`qwen3-coder`** over `qwen2.5-coder` for reliable tool calling with the Agents SDK.
-- 30B is a good balance on a 24GB GPU; use `qwen3-coder:14b` if VRAM is tight.
-- For vLLM instead of Ollama, set `OLLAMA_BASE_URL=http://localhost:8000/v1`.
-
-## Extending
-
-- Add a **selector mapper** agent that reads your app's `data-testid` conventions.
-- Run multiple Session Researchers in parallel on different segments, then merge flows.
-- Wire into CI: on new LogRocket issues, auto-open a PR with a generated regression test.
-
-## Cursor alternative
-
-If you want repo-aware agents in Cursor instead of a standalone Python script, use the Cursor SDK with the LogRocket MCP URL inline — but that uses Cursor models, not local Qwen.
