@@ -24,7 +24,7 @@ from .pipeline import generate_e2e_from_query
 from .record_fixtures import record_fixtures_from_har
 
 st.set_page_config(
-    page_title="E2E from LogRocket",
+    page_title="Replaywright",
     page_icon="🧪",
     layout="wide",
 )
@@ -61,7 +61,7 @@ def _capture_run(func, *args, **kwargs):
 
 
 def _sidebar() -> str:
-    st.sidebar.title("E2E from LogRocket")
+    st.sidebar.title("Replaywright")
     st.sidebar.caption("Local dashboard")
     st.sidebar.markdown(f"**Output dir:** `{output_dir()}`")
     st.sidebar.markdown(f"**Model:** `{st.session_state.get('ollama_model', '—')}`")

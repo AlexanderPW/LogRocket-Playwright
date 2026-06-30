@@ -29,6 +29,11 @@ blob-report/
 # Streamlit
 .streamlit/secrets.toml
 
+# Next.js web dashboard
+frontend/.next/
+frontend/node_modules/
+frontend/.env.local
+
 # OS / editor
 .DS_Store
 .idea/

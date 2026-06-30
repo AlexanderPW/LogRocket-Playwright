@@ -50,10 +50,19 @@ function matchesMock(request: Request, mock: ApiMockSpec): boolean {
 
 export async function setupPiiSafeRoutes(page: Page, flowName: string): Promise<void> {
   const fixturesDir = path.join(__dirname, '..', 'fixtures', flowName);
+  const runtimePath = path.join(fixturesDir, 'runtime.json');
+  if (fs.existsSync(runtimePath)) {
+    const runtime = JSON.parse(fs.readFileSync(runtimePath, 'utf-8')) as { api_mode?: string };
+    if (runtime.api_mode === 'passthrough') return;
+  }
+
   const manifestPath = path.join(fixturesDir, 'api-mocks.json');
   if (!fs.existsSync(manifestPath)) return;
 
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as MockManifest;
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as MockManifest & {
+    apiMode?: string;
+  };
+  if (manifest.apiMode === 'passthrough') return;
 
   await page.route('**/*', async (route: Route) => {
     const request = route.request();
@@ -273,6 +282,26 @@ def write_playwright_support(
     manifest_file = fixtures_dir / "api-mocks.json"
     manifest_file.write_text(_render_api_manifest(flow), encoding="utf-8")
     written.append(manifest_file)
+
+    from .flow_runtime import FlowRuntimeSettings
+    from urllib.parse import urlparse
+
+    start = flow.start_url or ""
+    if start.startswith("http"):
+        parsed = urlparse(start)
+        default_base = f"{parsed.scheme}://{parsed.netloc}"
+    else:
+        default_base = "https://portfolio.alexwaldrop.com"
+
+    runtime_file = fixtures_dir / "runtime.json"
+    runtime_file.write_text(
+        FlowRuntimeSettings(base_url=default_base, api_mode="live_obfuscate").model_dump_json(
+            indent=2
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    written.append(runtime_file)
 
     flow_file = fixtures_dir / "flow.json"
     flow_file.write_text(flow.model_dump_json(indent=2) + "\n", encoding="utf-8")
