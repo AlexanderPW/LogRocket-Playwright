@@ -1,4 +1,6 @@
-# E2E tests from LogRocket flows (local Qwen + OpenAI Agents SDK)
+# Replaywright
+
+**Replay sessions into Playwright tests.**
 
 Turn real LogRocket session replays into Playwright regression tests using:
 
@@ -8,7 +10,26 @@ Turn real LogRocket session replays into Playwright regression tests using:
 
 **Full documentation:** see [GUIDE.md](./GUIDE.md) for architecture, PII safety, HAR fixture recording, CI integration, and troubleshooting.
 
-**Web dashboard:** `pip install -e ".[dashboard]"` then `e2e-dashboard` — local UI to generate flows, record fixtures, and inspect outputs.
+## Web dashboard
+
+**Recommended** — Next.js UI + FastAPI backend:
+
+```bash
+pip install -e ".[web]"
+./scripts/run-web.sh
+```
+
+- API: http://localhost:8001
+- Dashboard: http://localhost:3001
+
+Generate flows, record fixtures, play tests headed with slow-mo, and configure per-flow runtime settings (live API obfuscation, offline fixtures, or passthrough).
+
+**Dev alternative** — Streamlit UI:
+
+```bash
+pip install -e ".[dashboard]"
+e2e-dashboard
+```
 
 ## Prerequisites
 
@@ -22,11 +43,13 @@ ollama show qwen3-coder:30b | grep -i capabilities
 ```
 
 3. Python 3.10+
+4. Node.js 18+ (for the web dashboard and Playwright test output)
 
 ## Setup
 
 ```bash
-cd e2e-from-logrocket
+git clone https://github.com/AlexanderPW/LogRocket-Playwright.git
+cd LogRocket-Playwright
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
