@@ -10,12 +10,18 @@ from .pipeline import generate_e2e_from_query
 from .record_fixtures import record_fixtures_from_har
 
 DEFAULT_QUERY = (
-    "Find checkout sessions from the last 7 days where users abandoned on the payment step. "
-    "Watch a few and extract the common happy-path flow we should regression-test."
+    "POC: personal portfolio site (no signup, checkout, or forms). "
+    "Use find_sessions to get the most recent session from the last 30 days that "
+    "lasted at least 10 seconds and includes multiple page navigations or link clicks. "
+    "Watch that session and extract the real navigation flow only."
 )
 
 
-def _cmd_generate(query: str, session_ids: list[str] | None = None) -> None:
+def _cmd_generate(
+    query: str,
+    session_ids: list[str] | None = None,
+    recording_ids: list[str] | None = None,
+) -> None:
     try:
         settings = load_settings()
     except RuntimeError as exc:
@@ -23,7 +29,9 @@ def _cmd_generate(query: str, session_ids: list[str] | None = None) -> None:
         sys.exit(1)
 
     generated, flow, written = asyncio.run(
-        generate_e2e_from_query(settings, query, session_ids=session_ids)
+        generate_e2e_from_query(
+            settings, query, session_ids=session_ids, recording_ids=recording_ids
+        )
     )
     print(f"Wrote {len(written)} files for flow '{flow.name}' ({generated.rationale})")
     for path in written:
@@ -77,6 +85,13 @@ def main() -> None:
         metavar="ID",
         help="LogRocket session ID to watch (repeatable). Skips broad session search.",
     )
+    gen.add_argument(
+        "--recording-id",
+        action="append",
+        dest="recording_ids",
+        metavar="ID",
+        help="LogRocket recording ID to watch (repeatable). Skips find_sessions.",
+    )
 
     rec = sub.add_parser(
         "record-fixtures",
@@ -87,7 +102,7 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.command == "generate":
-        _cmd_generate(args.query, session_ids=args.session_ids)
+        _cmd_generate(args.query, session_ids=args.session_ids, recording_ids=args.recording_ids)
     elif args.command == "record-fixtures":
         _cmd_record_fixtures(args.flow, args.har)
     else:

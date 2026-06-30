@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class FlowStep(BaseModel):
@@ -19,11 +19,24 @@ class FlowStep(BaseModel):
         "assert_url",
     ]
     target: str = Field(
-        description="Human-readable target: button text, label, role+name, or CSS hint"
+        default="",
+        description="Human-readable target: button text, label, role+name, or CSS hint",
     )
     value: str | None = None
     url: str | None = None
     notes: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_target(cls, data: object) -> object:
+        if isinstance(data, dict) and not data.get("target"):
+            data["target"] = (
+                data.get("value")
+                or data.get("url")
+                or data.get("action")
+                or "step"
+            )
+        return data
 
 
 class SyntheticTestData(BaseModel):
@@ -54,6 +67,8 @@ class ApiMock(BaseModel):
 
 
 class NormalizedFlow(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     name: str
     source_session_ids: list[str]
     start_url: str

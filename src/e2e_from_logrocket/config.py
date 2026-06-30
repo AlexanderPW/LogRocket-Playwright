@@ -20,14 +20,6 @@ class Settings:
     faker_seed: int
     source_env: str
 
-
-@dataclass(frozen=True)
-class RecordSettings:
-    e2e_output_dir: str
-    faker_seed: int
-    staging_base_url: str
-    playwright_browser: str = "chromium"
-
     @property
     def logrocket_mcp_url(self) -> str:
         base = (
@@ -36,6 +28,14 @@ class RecordSettings:
         )
         # sessions toolset: find_sessions + watch_sessions
         return f"{base}?toolsets=sessions"
+
+
+@dataclass(frozen=True)
+class RecordSettings:
+    e2e_output_dir: str
+    faker_seed: int
+    staging_base_url: str
+    playwright_browser: str = "chromium"
 
 
 def load_settings() -> Settings:

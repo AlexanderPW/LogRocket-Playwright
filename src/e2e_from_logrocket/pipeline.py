@@ -7,7 +7,7 @@ from pathlib import Path
 from agents import Runner
 from agents.mcp import MCPServerStreamableHttp
 
-from .agents import build_agents
+from .agent_defs import build_agents
 from .config import Settings
 from .models import configure_local_llm
 from .pii import PIISanitizer
@@ -33,12 +33,21 @@ def _parse_normalized_flow(raw: str) -> NormalizedFlow:
     return NormalizedFlow.model_validate(json.loads(text))
 
 
+def _extract_code_block(text: str) -> str:
+    """Pull TypeScript from a fenced block when the reviewer wraps the test."""
+    match = re.search(r"```(?:typescript|ts)?\s*\n(.*?)```", text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return text.strip()
+
+
 def _parse_reviewed_test(raw: str, flow_name: str) -> GeneratedTest:
     approved = raw.strip().startswith("APPROVED")
     body = raw.split("\n", 1)[1] if "\n" in raw else raw
-    if body.startswith("NEEDS_REVISION"):
+    if body.lstrip().startswith("NEEDS_REVISION"):
         body = body.split("\n", 1)[1] if "\n" in body else body
 
+    body = _extract_code_block(body)
     filename, code = _extract_filename(body, f"{flow_name}.spec.ts")
     return GeneratedTest(
         filename=filename,
@@ -52,6 +61,7 @@ async def generate_e2e_from_query(
     settings: Settings,
     query: str,
     session_ids: list[str] | None = None,
+    recording_ids: list[str] | None = None,
 ) -> tuple[GeneratedTest, NormalizedFlow, list[Path]]:
     """
     Multi-agent pipeline:
@@ -62,7 +72,6 @@ async def generate_e2e_from_query(
     5. Test Reviewer critiques and polishes
     """
     model = configure_local_llm(settings)
-    agents = build_agents(model)
     sanitizer = PIISanitizer(seed=settings.faker_seed)
 
     logrocket_server = MCPServerStreamableHttp(
@@ -71,7 +80,10 @@ async def generate_e2e_from_query(
             "url": settings.logrocket_mcp_url,
             "headers": {"Authorization": f"Bearer {settings.logrocket_api_key}"},
         },
+        client_session_timeout_seconds=180,
+        max_retry_attempts=2,
     )
+    agents = build_agents(model, mcp_servers=[logrocket_server])
 
     async with logrocket_server:
         research = await Runner.run(
@@ -80,8 +92,9 @@ async def generate_e2e_from_query(
                 query,
                 source_env=settings.source_env,
                 session_ids=session_ids,
+                recording_ids=recording_ids,
             ),
-            mcp_servers=[logrocket_server],
+            max_turns=25,
         )
 
         session_text = research.final_output

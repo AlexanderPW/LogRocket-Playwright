@@ -18,7 +18,7 @@ dashboard = ["streamlit>=1.40.0"]
 [project.scripts]
 e2e-from-logrocket = "e2e_from_logrocket.cli:main"
 record-fixtures = "e2e_from_logrocket.cli:main"
-e2e-dashboard = "e2e_from_logrocket.dashboard:main"
+e2e-dashboard = "e2e_from_logrocket.dashboard_cli:main"
 
 [build-system]
 requires = ["hatchling"]

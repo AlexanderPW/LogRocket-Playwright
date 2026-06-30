@@ -3,27 +3,29 @@ from __future__ import annotations
 from agents import Agent
 
 SESSION_RESEARCHER_INSTRUCTIONS = """\
-You are a LogRocket session analyst. You have MCP tools to find and watch user sessions.
+You are a LogRocket session analyst. MCP tool names are exactly: find_sessions, watch_sessions (snake_case — no other names).
 
 Your job:
-1. Use find_sessions to locate sessions matching the user's query (feature, URL, user, time range, errors).
+1. Use find_sessions to locate sessions matching the user's query (duration, navigation, URL, time range).
 2. Use watch_sessions to extract a faithful step-by-step narrative of what the user did.
 3. Return a concise markdown report with:
-   - session IDs used
-   - starting URL
-   - ordered user actions (clicks, inputs, navigation, errors)
-   - final outcome / success or failure
-   - DOM hints when visible (button text, labels, placeholders, URLs)
-   - anything flaky or environment-specific (autofill, modals, A/B flags)
+   - recording IDs and session IDs used (from find_sessions results — never invent IDs)
+   - starting URL (exact, from the replay)
+   - ordered user actions (clicks on links/buttons with visible text, navigations between pages)
+   - final page URL
+   - DOM hints when visible (link text, nav labels, headings, page titles)
+   - network requests only if clearly observed (method + path)
 
-Do not invent steps that are not supported by session data.
-Prefer role+accessible name selectors over brittle CSS when the replay shows them.
+Critical rules:
+- Do not invent steps, URLs, forms, or flows that are not in the session replay.
+- Simple sites (portfolios, blogs) usually have link navigation only — do not assume signup/checkout.
+- If find_sessions returns no results, stop and report that — do not make up a flow.
+- Prefer getByRole/getByText selectors based on visible link and button labels from the replay.
 
 PII safety (production sessions):
 - Never include raw emails, phone numbers, names, addresses, tokens, or account IDs in your report.
-- Refer to users as "User A" / "the customer" and redact values as [REDACTED_EMAIL], [REDACTED_PHONE], etc.
-- Still capture field labels, button text, URLs (without query tokens), and API path patterns.
-- Note which network requests (method + path) occurred during the flow.
+- Refer to users as "User A" and redact values as [REDACTED_EMAIL], etc.
+- Still capture link text, nav labels, URLs (without query tokens), and API path patterns.
 """
 
 FLOW_NORMALIZER_INSTRUCTIONS = """\
@@ -63,6 +65,8 @@ Rules:
 - Use assert_* steps for the regression's "must still work" checks.
 - For fill steps, use placeholder values like {{testData.email}} — never real production PII.
 - Include api_mocks for network calls observed in the session (method + path pattern only).
+- Use exact URLs from the session report — never example.com or guessed paths.
+- Navigation-only flows (portfolio/blog) should be mostly navigate + click + assert_url/assert_visible.
 - No markdown fences. JSON only.
 """
 
@@ -71,8 +75,8 @@ You write Playwright TypeScript e2e tests from a normalized user flow JSON.
 
 Requirements:
 - Use @playwright/test
-- Import synthetic data: `import { testData } from '../support/<flow_name>.test-data'`
-- Import route helper: `import { setupPiiSafeRoutes } from '../support/pii-routes'`
+- Import synthetic data: `import { testData } from './support/<flow_name>.test-data'`
+- Import route helper: `import { setupPiiSafeRoutes } from './support/pii-routes'`
 - In test.beforeEach, call: `await setupPiiSafeRoutes(page, '<flow_name>')`
 - Use testData.* for all fill values (email, firstName, password, etc.) — never hardcode production values
 - Prefer getByRole, getByLabel, getByPlaceholder, getByText over CSS
@@ -106,12 +110,13 @@ NEEDS_REVISION
 """
 
 
-def build_agents(model) -> dict[str, Agent]:
+def build_agents(model, *, mcp_servers: list | None = None) -> dict[str, Agent]:
     return {
         "session_researcher": Agent(
             name="Session Researcher",
             instructions=SESSION_RESEARCHER_INSTRUCTIONS,
             model=model,
+            mcp_servers=mcp_servers or [],
         ),
         "flow_normalizer": Agent(
             name="Flow Normalizer",
