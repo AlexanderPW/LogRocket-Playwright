@@ -13,6 +13,8 @@ from typing import Any
 from ..config import load_record_settings, load_settings
 from ..pipeline import generate_e2e_from_query
 from ..record_fixtures import record_fixtures_from_har
+from ..flow_index import index_flow_from_disk
+from ..test_results_store import save_test_run
 from ..test_runner import run_playwright_flow
 
 
@@ -96,6 +98,7 @@ class JobManager:
                 with redirect_stdout(buffer), redirect_stderr(buffer):
                     result = run()
                 self._append_log(job, buffer.getvalue())
+                index_flow_from_disk(result["flow_name"])
                 self._finish(job, result=result)
             except Exception as exc:
                 self._append_log(job, buffer.getvalue() + "\n" + traceback.format_exc())
@@ -133,6 +136,7 @@ class JobManager:
                 with redirect_stdout(buffer), redirect_stderr(buffer):
                     result = run()
                 self._append_log(job, buffer.getvalue())
+                index_flow_from_disk(result["flow_name"])
                 self._finish(job, result=result)
             except Exception as exc:
                 self._append_log(job, buffer.getvalue() + "\n" + traceback.format_exc())
@@ -170,6 +174,65 @@ class JobManager:
                     )
                 else:
                     self._finish(job, result=result)
+            except Exception as exc:
+                self._append_log(job, buffer.getvalue() + "\n" + traceback.format_exc())
+                self._finish(job, error=str(exc))
+
+        Thread(target=runner, daemon=True).start()
+        return job
+
+    def start_test(
+        self,
+        flow_name: str,
+        *,
+        headed: bool = False,
+        slow_mo: int = 0,
+        retries: int = 1,
+    ) -> Job:
+        job = self.create(
+            "test",
+            {
+                "flow_name": flow_name,
+                "headed": headed,
+                "slow_mo": slow_mo,
+                "retries": retries,
+            },
+        )
+
+        def runner() -> None:
+            self._set_status(job, JobStatus.RUNNING)
+            buffer = io.StringIO()
+
+            try:
+                with redirect_stdout(buffer), redirect_stderr(buffer):
+                    result = run_playwright_flow(
+                        flow_name,
+                        headed=headed,
+                        slow_mo=slow_mo,
+                        retries=retries,
+                        capture_json=True,
+                    )
+                record = save_test_run(
+                    {
+                        **result,
+                        "passed": result.get("passed_count", 0),
+                        "failed": result.get("failed_count", 0),
+                        "flaky": result.get("flaky_count", 0),
+                        "skipped": result.get("skipped_count", 0),
+                    }
+                )
+                payload = record.to_dict(include_report=False)
+                payload["run_id"] = record.id
+                self._append_log(job, buffer.getvalue() + str(result.get("logs", "")))
+                if result.get("status") == "failed":
+                    self._finish(
+                        job,
+                        result=payload,
+                        error=result.get("error_summary")
+                        or f"Test failed (exit {result.get('exit_code')})",
+                    )
+                else:
+                    self._finish(job, result=payload)
             except Exception as exc:
                 self._append_log(job, buffer.getvalue() + "\n" + traceback.format_exc())
                 self._finish(job, error=str(exc))

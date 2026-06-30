@@ -72,7 +72,7 @@ export function FlowRuntimePanel({
       <CardHeader>
         <CardTitle>Run environment</CardTitle>
         <CardDescription>
-          Control which URL Playwright hits and how API traffic is handled during Play flow.
+          Control which URL Playwright hits and how API traffic is handled during Play and Run test.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">

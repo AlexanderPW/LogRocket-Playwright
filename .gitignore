@@ -15,6 +15,7 @@ build/
 
 # Generated test output (reproducible via generate/record-fixtures)
 generated-tests/
+**/.replaywright/
 
 # HAR captures may contain staging/production data
 **/capture.har

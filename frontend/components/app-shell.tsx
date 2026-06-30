@@ -9,6 +9,7 @@ import {
   Play,
   Settings,
   Sparkles,
+  TestTube2,
   Wand2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -18,6 +19,7 @@ const nav = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/flows", label: "Flows", icon: FolderGit2 },
   { href: "/generate", label: "Generate", icon: Sparkles },
+  { href: "/tests", label: "Tests", icon: TestTube2 },
   { href: "/record", label: "Record fixtures", icon: Play },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

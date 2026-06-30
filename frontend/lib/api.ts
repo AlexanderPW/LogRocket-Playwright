@@ -17,6 +17,22 @@ export type FlowSummary = {
   api_mode?: "live_obfuscate" | "offline_fixtures" | "passthrough";
 };
 
+export type FlowsPage = {
+  items: FlowSummary[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+};
+
+export type FlowLookup = {
+  name: string;
+  has_spec: boolean;
+  base_url: string;
+  api_mode: FlowSummary["api_mode"];
+  start_url: string | null;
+};
+
 export type SettingField = {
   key: string;
   label: string;
@@ -71,6 +87,45 @@ export type Job = {
   done: boolean;
 };
 
+export type TestRun = {
+  id: string;
+  flow_name: string;
+  status: "passed" | "failed" | "flaky" | "skipped";
+  started_at: string;
+  finished_at: string;
+  duration_ms: number;
+  headed: boolean;
+  slow_mo: number;
+  retries: number;
+  base_url: string;
+  api_mode: string;
+  spec_name: string;
+  exit_code: number;
+  passed: number;
+  failed: number;
+  flaky: number;
+  skipped: number;
+  error_summary: string | null;
+  logs: string;
+  report?: Record<string, unknown> | null;
+};
+
+export type TestRunStats = {
+  total: number;
+  passed: number;
+  failed: number;
+  flaky: number;
+  skipped: number;
+  pass_rate: number | null;
+  recent_failures: Array<{
+    id: string;
+    flow_name: string;
+    status: string;
+    started_at: string;
+    error_summary: string | null;
+  }>;
+};
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -88,7 +143,51 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const fetchOverview = () => api<Overview>("/api/overview");
-export const fetchFlows = () => api<FlowSummary[]>("/api/flows");
+
+export const fetchFlowsPage = (params?: {
+  q?: string;
+  page?: number;
+  page_size?: number;
+  has_spec?: boolean;
+  sort?: string;
+}) => {
+  const query = new URLSearchParams();
+  if (params?.q) query.set("q", params.q);
+  if (params?.page) query.set("page", String(params.page));
+  if (params?.page_size) query.set("page_size", String(params.page_size));
+  if (params?.has_spec !== undefined) query.set("has_spec", String(params.has_spec));
+  if (params?.sort) query.set("sort", params.sort);
+  const suffix = query.toString() ? `?${query}` : "";
+  return api<FlowsPage>(`/api/flows${suffix}`);
+};
+
+/** @deprecated Prefer fetchFlowsPage or lookupFlows for large flow lists. */
+export const fetchFlows = async (params?: {
+  q?: string;
+  has_spec?: boolean;
+}) => {
+  const page = await fetchFlowsPage({ ...params, page: 1, page_size: 10_000 });
+  return page.items;
+};
+
+export const lookupFlows = (params?: {
+  q?: string;
+  limit?: number;
+  has_spec?: boolean;
+}) => {
+  const query = new URLSearchParams();
+  if (params?.q) query.set("q", params.q);
+  if (params?.limit) query.set("limit", String(params.limit));
+  if (params?.has_spec !== undefined) query.set("has_spec", String(params.has_spec));
+  const suffix = query.toString() ? `?${query}` : "";
+  return api<FlowLookup[]>(`/api/flows/lookup${suffix}`);
+};
+
+export const reindexFlows = () =>
+  api<{ scanned: number; removed: number; skipped: number; cached: boolean }>(
+    "/api/flows/reindex",
+    { method: "POST" },
+  );
 export const fetchFlow = (name: string) => api<FlowDetail>(`/api/flows/${encodeURIComponent(name)}`);
 export const fetchFlowRuntime = (name: string) =>
   api<FlowRuntime>(`/api/flows/${encodeURIComponent(name)}/runtime`);
@@ -132,4 +231,26 @@ export const startPlay = (
     method: "POST",
     body: JSON.stringify(body ?? { headed: true, slow_mo: 1500 }),
   });
+export const startTest = (
+  flowName: string,
+  body?: { headed?: boolean; slow_mo?: number; retries?: number },
+) =>
+  api<{ job_id: string }>(`/api/flows/${encodeURIComponent(flowName)}/test`, {
+    method: "POST",
+    body: JSON.stringify(body ?? { headed: false, slow_mo: 0, retries: 1 }),
+  });
+export const fetchTestRuns = (params?: {
+  flow_name?: string;
+  status?: string;
+  limit?: number;
+}) => {
+  const query = new URLSearchParams();
+  if (params?.flow_name) query.set("flow_name", params.flow_name);
+  if (params?.status) query.set("status", params.status);
+  if (params?.limit) query.set("limit", String(params.limit));
+  const suffix = query.toString() ? `?${query}` : "";
+  return api<TestRun[]>(`/api/test-runs${suffix}`);
+};
+export const fetchTestRun = (id: string) => api<TestRun>(`/api/test-runs/${id}`);
+export const fetchTestStats = () => api<TestRunStats>("/api/test-runs/stats");
 export const fetchJob = (id: string) => api<Job>(`/api/jobs/${id}`);

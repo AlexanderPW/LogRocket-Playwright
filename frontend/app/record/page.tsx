@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { fetchFlows, startRecord } from "@/lib/api";
+import { useState } from "react";
+import { startRecord } from "@/lib/api";
+import { FlowSearchSelect } from "@/components/flow-search-select";
 import { JobMonitor } from "@/components/job-monitor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,22 +21,11 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export default function RecordPage() {
-  const [flows, setFlows] = useState<string[]>([]);
   const [flowName, setFlowName] = useState("");
   const [harFile, setHarFile] = useState<File | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    fetchFlows()
-      .then((data) => {
-        const names = data.map((f) => f.name);
-        setFlows(names);
-        if (names.length) setFlowName(names[0]);
-      })
-      .catch(() => setFlows([]));
-  }, []);
 
   const run = async () => {
     if (!flowName) return;
@@ -79,25 +69,11 @@ export default function RecordPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {flows.length === 0 ? (
-            <p className="text-sm text-zinc-400">Generate a flow first.</p>
-          ) : (
-            <div className="space-y-2">
-              <Label htmlFor="flow">Flow</Label>
-              <select
-                id="flow"
-                value={flowName}
-                onChange={(e) => setFlowName(e.target.value)}
-                className="flex h-10 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100"
-              >
-                {flows.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          <FlowSearchSelect
+            value={flowName}
+            onChange={(name) => setFlowName(name)}
+            placeholder="Search flows to record…"
+          />
           <div className="space-y-2">
             <Label htmlFor="har">Upload existing HAR (optional)</Label>
             <input

@@ -10,17 +10,34 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from ..dashboard_data import (
-    list_flows,
     output_dir,
     read_flow_file,
     read_spec_for_flow,
     read_support_file,
+)
+from ..flow_index import (
+    flow_exists_in_index,
+    flow_index_stats,
+    flow_summary_to_api,
+    get_flow_from_index,
+    index_flow_from_disk,
+    init_flow_index,
+    list_flows_paginated,
+    lookup_flows,
+    sync_flow_index,
+    update_flow_runtime_index,
 )
 from ..flow_runtime import (
     FlowRuntimeSettings,
     load_runtime_settings,
     runtime_status,
     save_runtime_settings,
+)
+from ..test_results_store import (
+    get_test_run,
+    init_db,
+    list_test_runs,
+    test_run_stats,
 )
 from .jobs import JobStatus, job_manager
 from .settings_service import SettingsUpdate, get_settings, reload_env, update_settings
@@ -58,9 +75,18 @@ class PlayRequest(BaseModel):
     slow_mo: int = 1500
 
 
+class TestRequest(BaseModel):
+    headed: bool = False
+    slow_mo: int = 0
+    retries: int = 1
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     reload_env()
+    init_db()
+    init_flow_index()
+    sync_flow_index()
 
 
 @app.get("/api/health")
@@ -70,14 +96,11 @@ def health() -> dict[str, str]:
 
 @app.get("/api/overview")
 def overview() -> dict[str, Any]:
-    flows = list_flows()
+    stats = flow_index_stats()
     settings = get_settings()
     return {
         "output_dir": str(output_dir()),
-        "flow_count": len(flows),
-        "with_specs": sum(1 for f in flows if f.has_spec),
-        "with_har": sum(1 for f in flows if f.has_har),
-        "offline_mocks": sum(f.fulfill_count for f in flows),
+        **stats,
         "settings_ok": {
             "generate": all(s.is_set for s in settings if s.required_for == "generate" and s.key != "STAGING_BASE_URL"),
             "record": all(s.is_set for s in settings if s.required_for == "record-fixtures"),
@@ -96,37 +119,56 @@ def write_settings(payload: SettingsUpdate) -> list[dict[str, Any]]:
 
 
 @app.get("/api/flows")
-def flows() -> list[dict[str, Any]]:
-    result = []
-    for f in list_flows():
-        runtime = load_runtime_settings(f.name)
-        result.append(
-            {
-                "name": f.name,
-                "has_flow_json": f.has_flow_json,
-                "has_api_mocks": f.has_api_mocks,
-                "has_spec": f.has_spec,
-                "has_har": f.has_har,
-                "fixture_count": f.fixture_count,
-                "mock_count": f.mock_count,
-                "fulfill_count": f.fulfill_count,
-                "transform_count": f.transform_count,
-                "start_url": f.start_url,
-                "step_count": f.step_count,
-                "session_ids": f.session_ids,
-                "base_url": runtime.base_url,
-                "api_mode": runtime.api_mode,
-            }
+def flows(
+    q: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+    has_spec: bool | None = None,
+    sort: str = "name",
+) -> dict[str, Any]:
+    result = list_flows_paginated(
+        q=q,
+        page=page,
+        page_size=page_size,
+        has_spec=has_spec,
+        sort=sort,
+    )
+    items = [
+        flow_summary_to_api(
+            summary,
+            base_url=result.base_url_by_name.get(summary.name),
+            api_mode=result.api_mode_by_name.get(summary.name),
         )
-    return result
+        for summary in result.items
+    ]
+    return {
+        "items": items,
+        "total": result.total,
+        "page": result.page,
+        "page_size": result.page_size,
+        "pages": result.pages,
+    }
+
+
+@app.get("/api/flows/lookup")
+def flows_lookup(
+    q: str | None = None,
+    limit: int = 30,
+    has_spec: bool | None = None,
+) -> list[dict[str, Any]]:
+    return lookup_flows(q=q, limit=limit, has_spec=has_spec)
+
+
+@app.post("/api/flows/reindex")
+def flows_reindex() -> dict[str, Any]:
+    return sync_flow_index(force=True)
 
 
 @app.get("/api/flows/{flow_name}")
 def flow_detail(flow_name: str) -> dict[str, Any]:
-    flows = {f.name: f for f in list_flows()}
-    if flow_name not in flows:
+    f = get_flow_from_index(flow_name)
+    if not f:
         raise HTTPException(status_code=404, detail="Flow not found")
-    f = flows[flow_name]
     spec_name, spec_text = read_spec_for_flow(flow_name)
     fixture_dir = output_dir() / "fixtures" / flow_name
     fixture_files = sorted(
@@ -164,17 +206,22 @@ def flow_detail(flow_name: str) -> dict[str, Any]:
 
 @app.get("/api/flows/{flow_name}/runtime")
 def get_flow_runtime(flow_name: str) -> dict[str, object]:
-    if flow_name not in {f.name for f in list_flows()}:
+    if not flow_exists_in_index(flow_name):
         raise HTTPException(status_code=404, detail="Flow not found")
     return runtime_status(flow_name)
 
 
 @app.put("/api/flows/{flow_name}/runtime")
 def put_flow_runtime(flow_name: str, body: FlowRuntimeSettings) -> dict[str, object]:
-    if flow_name not in {f.name for f in list_flows()}:
+    if not flow_exists_in_index(flow_name):
         raise HTTPException(status_code=404, detail="Flow not found")
     try:
         save_runtime_settings(flow_name, body)
+        update_flow_runtime_index(
+            flow_name,
+            base_url=body.base_url,
+            api_mode=body.api_mode,
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return runtime_status(flow_name)
@@ -192,11 +239,9 @@ def start_generate(body: GenerateRequest) -> dict[str, str]:
 
 @app.post("/api/flows/{flow_name}/play")
 def start_play(flow_name: str, body: PlayRequest | None = None) -> dict[str, str]:
-    flows = {f.name for f in list_flows()}
-    if flow_name not in flows:
+    summary = get_flow_from_index(flow_name)
+    if not summary:
         raise HTTPException(status_code=404, detail="Flow not found")
-
-    summary = next(f for f in list_flows() if f.name == flow_name)
     if not summary.has_spec:
         raise HTTPException(status_code=400, detail="Flow has no Playwright spec yet")
 
@@ -207,6 +252,47 @@ def start_play(flow_name: str, body: PlayRequest | None = None) -> dict[str, str
         slow_mo=opts.slow_mo,
     )
     return {"job_id": job.id}
+
+
+@app.post("/api/flows/{flow_name}/test")
+def start_test(flow_name: str, body: TestRequest | None = None) -> dict[str, str]:
+    summary = get_flow_from_index(flow_name)
+    if not summary:
+        raise HTTPException(status_code=404, detail="Flow not found")
+    if not summary.has_spec:
+        raise HTTPException(status_code=400, detail="Flow has no Playwright spec yet")
+
+    opts = body or TestRequest()
+    job = job_manager.start_test(
+        flow_name,
+        headed=opts.headed,
+        slow_mo=opts.slow_mo,
+        retries=opts.retries,
+    )
+    return {"job_id": job.id}
+
+
+@app.get("/api/test-runs")
+def test_runs(
+    flow_name: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    runs = list_test_runs(flow_name=flow_name, status=status, limit=limit)
+    return [run.to_dict() for run in runs]
+
+
+@app.get("/api/test-runs/stats")
+def test_stats() -> dict[str, Any]:
+    return test_run_stats()
+
+
+@app.get("/api/test-runs/{run_id}")
+def test_run_detail(run_id: str) -> dict[str, Any]:
+    run = get_test_run(run_id, include_report=True)
+    if not run:
+        raise HTTPException(status_code=404, detail="Test run not found")
+    return run.to_dict(include_report=True)
 
 
 @app.post("/api/record")
